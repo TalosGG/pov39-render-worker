@@ -1,0 +1,39 @@
+services:
+  - type: web
+    name: pov39-render-worker
+    runtime: docker
+    plan: standard
+    region: frankfurt
+    numInstances: 1
+    healthCheckPath: /health
+    envVars:
+      - key: VIDEO_PROCESSING_TOKEN
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: pov39-render-db
+          property: connectionString
+      - key: S3_BUCKET
+        sync: false
+      - key: S3_ENDPOINT
+        sync: false
+      - key: S3_REGION
+        value: auto
+      - key: S3_ACCESS_KEY_ID
+        sync: false
+      - key: S3_SECRET_ACCESS_KEY
+        sync: false
+      - key: ALLOWED_SOURCE_HOSTS
+        sync: false
+      - key: RENDER_CONCURRENCY
+        value: "1"
+      - key: MAX_SOURCE_BYTES
+        value: "2147483648"
+      - key: DOWNLOAD_URL_TTL_SECONDS
+        value: "900"
+
+databases:
+  - name: pov39-render-db
+    plan: basic-256mb
+    region: frankfurt
+    ipAllowList: []
