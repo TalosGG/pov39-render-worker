@@ -1,0 +1,121 @@
+POV39 — COMPLETE BRAND IDENTITY IMPLEMENTATION IN THE EXISTING BASE44 APP
+
+ROLE AND OBJECTIVE
+You are the senior product designer, design systems engineer, frontend engineer, mobile UX specialist, and QA engineer responsible for applying an APPROVED brand identity to an EXISTING working Base44 application.
+
+The approved product name is POV39.
+The approved tagline is: Your Vision. Fully Realized.
+Our existing project already has functioning business logic, multi-tenant entities, brand onboarding, Brand Brain, creative edit planning, revisions, version restore, research, billing metering, and administrative views. This is a visual rebrand and product experience upgrade, NOT a request to rebuild the application or replace its backend.
+
+INPUT ASSETS
+I have attached the POV39 brand identity asset package and Apple Design Guide.
+Read and inspect all accessible attachments before modifying the project. Treat the brandbook and existing SVG/PNG logo assets as canonical. Treat screen images as visual direction, not literal application screenshots or proof that functions exist.
+
+The POV39 brand ZIP contains:
+01_Logos/logo_white.svg and logo_white.png: primary logo on light backgrounds.
+01_Logos/logo_dark.svg and logo_dark.png: primary logo on dark backgrounds.
+01_Logos/logo_transparent_ink.svg and logo_transparent_light.svg: transparent variants.
+01_Logos/icon_white.svg, icon_dark.svg, icon_transparent.svg and related PNGs.
+01_Logos/app_icon_ios_light.png and app_icon_ios_dark.png: square app identity artwork.
+01_Logos/favicon_32.png, favicon_64.png, favicon_180.png, favicon_512.png.
+02_iPhone_Screens/01_Onboarding.png.
+02_iPhone_Screens/02_Projects.png.
+02_iPhone_Screens/03_Editor.png.
+02_iPhone_Screens/04_AI_Revisions.png.
+02_iPhone_Screens/05_Brand_Brain.png.
+02_iPhone_Screens/06_Hebrew_RTL.png.
+03_Website/01_Landing_Page.png.
+04_Brandbook/POV39_Brandbook.pdf.
+05_Design_Tokens/tokens.json and POV39_Tokens.png.
+06_Reference/Apple-Design-Guide.pdf may also be included in the handoff package.
+
+If ZIP archives cannot be opened or read in your environment, say this explicitly before any visual changes. Do NOT invent what the archive contains. In that case, use the separately supplied extracted PDF, SVG, PNG, and design token files. Never use a screenshot as the production logo if the SVG is available.
+
+HARD REQUIREMENTS — PROTECT EXISTING PRODUCT
+1. Continue inside THIS EXISTING Base44 app. Do not create another app or project.
+2. Do not delete, recreate, bulk migrate, rename, or reset the existing 21 entity schemas or their data. Do not assume an entity/field/function name; inspect the actual current project before touching anything.
+3. Preserve the existing 10 verified backend functions, authenticated endpoints, role checks, tenant/workspace ownership enforcement, AI orchestration, editing timeline schema, revision versioning, research logic, billing metering, and administrative functionality.
+4. Preserve all existing user accounts, brands, projects, assets, versions, subscription records, permissions, and audit trails. Never delete customer data.
+5. Never change API contracts, workflow statuses, authorization logic, or secrets merely to complete the rebrand.
+6. Keep the currently honest infrastructure statuses: real media processing and generative video are NOT connected yet. Do not present blocked jobs as completed renders or allow users to download fake outputs.
+7. If a change to a backend contract is truly required, document the specific necessity and regression-test it before applying. Prefer frontend-only changes.
+8. Take a snapshot/checkpoint or use available project rollback functionality before substantial modifications.
+9. All production-facing branding must use POV39. Replace old Creative Intelligence branding in UI copy, titles, metadata, auth screens, loading states, emails/templates owned by this app if applicable, and marketing surfaces. Do NOT blindly rename database tables, storage keys, environment variables, or internal IDs containing old strings.
+10. Hide internal AI provider names in normal customer UX. The customer sees POV39, Brand Brain, AI Editing, Generative Studio, and Creative Assistant. Provider routing, model IDs, debugging names, credentials and internal costs stay in protected backend/admin contexts. Maintain appropriate privacy disclosures about third-party AI data processing; do not misrepresent data handling.
+
+BRAND SYSTEM — SINGLE SOURCE OF TRUTH
+The provided assets are final references. Do NOT redraw or ask an image model to regenerate the POV39 logo or icon. Use exact SVG files wherever appropriate, without distortion, recoloring, or changing geometric proportions.
+
+Brand colors (from the attached design tokens):
+Primary Electric: #4865FF
+Secondary Iris: #9477FF
+Ink: #0B1020
+Canvas: #F7F9FC
+Dark background: #0C1120
+Dark surface: #181E30
+Secondary text: #65738D
+Border: #E4EAF2
+Success: #24B58B
+
+Implement a semantic global design token system (CSS variables or the project's compatible theming mechanism), for both light and dark themes. Define tokens for canvas, surfaces, elevated surfaces, text, muted text, primary, hover/pressed, border, divider, focus ring, success, warning, danger, cards, and editor surfaces. Provide measured accessible contrast; adjust derived text shades if needed without changing the canonical logo colors. Do not use brand blue as every surface, and do not flood the interface with gradients or ornamental glass effects.
+
+Typography:
+English: Inter / Inter Display where available and appropriately licensed; otherwise use a compatible locally available system sans serif.
+Hebrew: Noto Sans Hebrew where available; otherwise a readable Hebrew system sans serif.
+Use clear hierarchy, approximately 17 px or equivalent for main iPhone body copy where feasible, with responsive sizing and no tiny critical controls.
+Use consistent iconography, visually calm spacing, strong content hierarchy, subtly rounded surfaces, accessible touch targets at least 44 x 44 CSS px on mobile where possible, clear pressed/focus states, and one distinctive brand accent.
+
+APPLE GUIDELINES / MOBILE FIRST
+Use the attached Apple Design Guide for design principles adapted to a Base44 web app packaged as a WebView iPhone app. Do NOT falsely claim that the app is native SwiftUI or React Native.
+
+Target iPhone viewport widths beginning around 375 to 390 CSS px, including smaller supported layouts. Ensure safe area top/bottom handling using env(safe-area-inset-*), no horizontal overflow, correct viewport behavior under the iPhone keyboard, and thumb-friendly control placement. Content should not be obscured by the bottom navigation or home indicator.
+
+Support English LTR and Hebrew RTL as equally complete product experiences. Locale affects layout direction, alignments, logical padding/margins, tabs/chevrons where appropriate, search fields and form validation. Numbers, timecodes, filenames, URLs, email addresses, and video controls must retain correct readable direction. Language switching must never erase pending form data.
+
+Implement a clear top-level mobile navigation structure with Home, Projects, Create, Brand Brain and Account as appropriate to the actual information architecture. If fewer tabs are preferable, choose the cleanest structure but do not hide core features. Desktop should use an adaptive sidebar. Keep all actions reachable, accessible, and visually consistent.
+
+Respect prefers-reduced-motion, keyboard navigation on desktop, visible focus rings, semantic accessible labels, proper alt text for imagery, no color-only meaning, appropriate color contrast, large text/zoom, and honest progress/loading/error states.
+
+SCREENS TO IMPLEMENT OR VISUALLY UPGRADE
+A. Landing / Marketing: premium POV39 brand site, signature above-the-fold hero, clear video editing proposition, product benefits, how it works, creator-focused examples, and honest CTA to signup. Use 03_Website/01_Landing_Page.png as direction. Do not invent customer testimonials, performance statistics, or working generated videos.
+B. Authentication: POV39 logo, minimal sign-in and sign-up with consistent states, language switch and privacy links.
+C. Brand Onboarding: guided, short progressive steps; business identity, website/social links, palette, audience, preferred editing style and language; explain how POV39 will use data and what the user can correct.
+D. Home / Projects: cinematic project previews when authentic assets are present; otherwise thoughtfully designed empty states. Strong Create action, effective status indicators, no fake progress or fake sample projects in real customer accounts.
+E. Brand Brain: a credible creative AI assistant surface with citations/provenance distinctions where applicable, confirmed brand facts, inferred preferences and clear editing controls.
+F. Video Studio: media preview dominates; a compact touch-friendly timeline or shot list with clear edit actions; export status reflects real rendering infrastructure. A dark immersive editor surface is appropriate here while the rest of the app may be light.
+G. Conversational Revisions: threaded requests, video previews, precise version history, restore/version comparison, visible actual processing/blocked statuses.
+H. Media / Assets: brand logos and source footage libraries, type badges, sorting, uploading, reliable previews and deletion confirmation.
+I. Research / Ideas: show source-backed findings, media links, confidence/date/context; never show made-up engagement statistics.
+J. Billing / Usage: real metering, account status and credit visibility without falsely implying unavailable subscription or in-app purchase integrations.
+K. Admin / Settings: restrained professional UI, permission-gated, with detailed internal diagnostic data only for authorized admins.
+
+SCREEN MAPPING
+01_Onboarding.png is the reference for sign-up / brand setup.
+02_Projects.png is the reference for library / home.
+03_Editor.png is the reference for editing workspace.
+04_AI_Revisions.png is the reference for natural language edit revisions.
+05_Brand_Brain.png is the reference for the assistant and brand profile.
+06_Hebrew_RTL.png is the reference for RTL visual QA.
+01_Landing_Page.png is the reference for marketing website.
+Use imagery as creative direction; recompose for actual content and interactive behavior.
+
+EXECUTION PLAN — DO NOT STOP AT A PLAN
+Phase 0: Inspect existing routes, shared layout, navigation, components, CSS/theme, localization structure, all auth/tenant protections and key functional flows. Capture baseline for regression. Enumerate any brand/visual assets that could not be parsed.
+Phase 1: Integrate canonical logo/icon SVG/PNG assets; replace visible brand strings, app favicon, appropriate PWA/app shell metadata where supported, SEO title, theme color and splash/login assets. Create one reusable brand asset component selecting correct contrast variant.
+Phase 2: Implement design tokens, typography, dark/light theme, reusable buttons/cards/inputs/tabs/dialogs/toasts/loading/error/empty components, navigation, and viewport/safe-area handling. Prefer updating existing components to duplicating them.
+Phase 3: Apply the new system to onboarding, marketing, projects, Brand Brain, editor, revisions, assets, research, billing, admin and account. Ensure every screen is consistent.
+Phase 4: Thorough manual/automated visual and functional regression checks. Fix any previously working workflows broken by the UI changes.
+
+DELIVERY / ACCEPTANCE CRITERIA
+1. Display the real POV39 logo and icon across relevant surfaces; SVG loaded as production asset rather than AI approximation.
+2. No old visible brand name remains in user-facing UI, page title or metadata, except deliberate legacy data that must be preserved.
+3. All required screens respond correctly on narrow mobile viewport, tablet and desktop; verified English LTR and Hebrew RTL.
+4. Actual workspace create -> brand onboarding -> brand profile -> Brand Brain -> video project/edit plan -> revision -> restore continues to function exactly as before.
+5. Cross-tenant access remains blocked, permissions remain intact; role-only admin routes remain protected.
+6. The edit plan versioning and render-not-connected flow retain honest status without fake results.
+7. Contrast, tap targets, keyboard focus, dynamic text/zoom, safe areas, empty states, loading and error states pass practical QA.
+8. Share which routes/components were modified, what assets were used, tests run, and any limitations still unresolved.
+9. Do not claim App Store publication or native iOS capabilities without an actual store build and device validation.
+10. Do not modify or add paid AI/video integrations during this design rebrand. That is a separate future workstream.
+
+CRITICAL INSTRUCTION: Do the actual implementation, not merely a design proposal. Do not rewrite the functional backend and do not replace working real data with mock data. If an attachment cannot be read, report that limitation instead of guessing. At completion, summarize completed changes, show key before/after screens if supported, provide verification evidence and distinguish tested outcomes from assumptions.
