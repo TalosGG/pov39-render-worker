@@ -125,11 +125,14 @@ try {
     inputProps: { composition },
     crf: Number(args.crf) || 23,
     pixelFormat: 'yuv420p',
-    concurrency: Number(args.concurrency) || null,
+    // One tab unless the worker says otherwise: Remotion's own default spreads frames
+    // over as many browser tabs as the machine has cores, which is what exhausts a
+    // small instance. Memory safety first; the worker passes its own value explicitly.
+    concurrency: Number(args.concurrency) || 1,
     chromiumOptions: chromiumOptions(),
     onProgress: ({ renderedFrames, encodedFrames }) => {
       const done = Math.max(renderedFrames, encodedFrames);
-      if (done % 90 === 0 && done > 0) console.log(`[motion] ${done}/${resolved.durationInFrames} frames`);
+      if (done % 15 === 0 && done > 0) console.log(`[motion] ${done}/${resolved.durationInFrames} frames`);
     },
   });
 

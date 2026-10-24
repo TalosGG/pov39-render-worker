@@ -11,6 +11,9 @@ import { ffmpegVersion } from './render/ffmpeg.js';
 import { checkSourceUrl } from './download.js';
 import { isSafeId, belongsTo } from './keys.js';
 import { storageRoutes } from './storageRoutes.js';
+import { resolveRemotionConcurrency } from './render/motion.js';
+import { resourceSnapshot } from './resources.js';
+import { sweepWorkDir, sweepBundles } from './cleanup.js';
 
 const require = createRequire(import.meta.url);
 const express = require('express');
@@ -21,6 +24,27 @@ const storage = createStorage(config.s3);
 const queue = createQueue({ db, storage, config });
 
 const TERMINAL = new Set(['succeeded', 'failed', 'canceled']);
+
+/**
+ * How this process ends is evidence, and from the outside the possibilities look
+ * identical: the job is simply left `running`. So each one says what it was, in its own
+ * words — a platform stop (deploy, scale, health-check restart) announces itself, and an
+ * unhandled error is logged with its stack — and the row is diagnosed on the next boot.
+ */
+process.on('SIGTERM', () => {
+  console.log('[lifecycle] SIGTERM received — the platform is stopping this instance; a job in flight is recovered on boot');
+  process.exit(0);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('[lifecycle] uncaught exception:', error?.stack || error);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[lifecycle] unhandled rejection:', reason instanceof Error ? reason.stack : String(reason));
+  process.exit(1);
+});
 
 /** Never returns inputs (they contain signed source URLs) or storage credentials. */
 async function publicJob(job) {
@@ -120,7 +144,13 @@ app.get('/health/deep', auth, async (_req, res) => {
     motion_ready: caps.motion.ready,
     motion: caps.motion,
     active_jobs: queue.active(),
+    // How many jobs run at once, and how many frames a motion render draws at once:
+    // both are limits this worker imposes on itself, so they are reported, not assumed.
     concurrency: config.concurrency,
+    motion_concurrency: resolveRemotionConcurrency(),
+    // The instance this is running on, measured from the container itself. A motion
+    // render that cannot fit here is refused up front, which needs these numbers.
+    resources: await resourceSnapshot(),
   });
 });
 
@@ -214,6 +244,26 @@ app.use((error, _req, res, _next) => {
 });
 
 await db.migrate();
-await db.recoverInterrupted();
+
+// What this container actually is. Printed on every boot: after a restart this line is
+// the only record of the memory ceiling the host enforces, and it is what an
+// out-of-memory kill is diagnosed against.
+const boot = await resourceSnapshot();
+console.log(
+  `[boot] pov39-render-worker ${WORKER_VERSION} · cpus=${boot.cpus} · memory=${boot.memory.limit_mb || boot.memory.host_total_mb}MB limit, ${boot.memory.used_mb}MB in use · node=${boot.node} · motion concurrency=${resolveRemotionConcurrency()}`,
+);
+
+// A worker killed mid-render never cleans up after itself: the previous attempt's work
+// directory and its Remotion bundle directory are still on disk, and on a small instance
+// those are exactly the megabytes the next attempt needs. Nothing is running at boot.
+const swept = await sweepWorkDir(config.workDir);
+const bundles = await sweepBundles();
+if (swept.length || bundles.length) {
+  console.log(`[boot] cleared ${swept.length} leftover work dir(s), ${bundles.length} leftover bundle dir(s)`);
+}
+
+const interrupted = await db.recoverInterrupted({ ...boot, motion_concurrency: resolveRemotionConcurrency() });
+if (interrupted) console.log(`[boot] ${interrupted} job(s) had been interrupted with the previous process`);
+
 queue.start();
 app.listen(config.port, () => console.log(`[pov39-render-worker] listening on ${config.port}`));

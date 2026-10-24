@@ -20,8 +20,14 @@ export function loadConfig() {
       secretAccessKey: required('S3_SECRET_ACCESS_KEY'),
       forcePathStyle: process.env.S3_FORCE_PATH_STYLE === 'true',
     },
-    concurrency: Math.max(1, Number(process.env.RENDER_CONCURRENCY || 1)),
+    // Jobs run one at a time by default. Two at once on one instance multiply the
+    // browser's memory — the resource a motion render actually competes for — so the
+    // ceiling is enforced here instead of being left to the environment.
+    concurrency: Math.min(2, Math.max(1, Number(process.env.RENDER_CONCURRENCY || 1))),
     workDir: process.env.WORK_DIR || '/tmp/pov39',
+    // A motion render needs a browser to fit in memory. Below this the worker refuses
+    // the job, with the measured numbers, rather than letting the host kill it.
+    motionMinMemoryBytes: Math.max(0, Number(process.env.MOTION_MIN_MEMORY_MB || 1024)) * 1024 * 1024,
     maxSourceBytes: Number(process.env.MAX_SOURCE_BYTES || 2 * 1024 ** 3),
     downloadUrlTtl: Number(process.env.DOWNLOAD_URL_TTL_SECONDS || 900),
     maxUploadBytes: Number(process.env.MAX_UPLOAD_BYTES || 2 * 1024 ** 3),

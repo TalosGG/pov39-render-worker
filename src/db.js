@@ -36,6 +36,10 @@ export function createDb(url) {
         completed_at timestamptz
       )`);
       await pool.query('create index if not exists render_jobs_queue_idx on render_jobs (status, created_at)');
+      // Evidence that survives a restart: what the renderer's process did, and how many
+      // times the host stopped this worker while the job was running.
+      await pool.query('alter table render_jobs add column if not exists diagnostics jsonb');
+      await pool.query('alter table render_jobs add column if not exists interruptions int not null default 0');
     },
 
     /** Inserts once per idempotency key; a repeat returns the existing job. */
@@ -74,17 +78,32 @@ export function createDb(url) {
       return result.rows[0] || null;
     },
 
-    /** On boot: jobs left running by a crashed process go back to the queue, up to MAX_ATTEMPTS. */
-    async recoverInterrupted() {
-      await pool.query(
+    /**
+     * On boot: a job still marked `running` was killed together with the process. The
+     * host stopped it; it did not fail on its own work.
+     *
+     * It gets one more attempt, and a job the host has now stopped twice is failed
+     * outright rather than retried again — a third run of the same work on the same
+     * instance would only take the worker down a third time. What the container had at
+     * that moment is written onto the job, so the reason can be read back afterwards
+     * instead of guessed at.
+     */
+    async recoverInterrupted(diagnostics = null) {
+      const result = await pool.query(
         `update render_jobs set
-           status = case when attempts >= $1 then 'failed' else 'queued' end,
-           error_code = case when attempts >= $1 then 'worker_interrupted' else error_code end,
-           error = case when attempts >= $1 then 'The worker stopped repeatedly while rendering this job.' else error end,
-           progress = 0, updated_at = now()
+           status = case when attempts >= $1 or interruptions >= 1 then 'failed' else 'queued' end,
+           error_code = case when attempts >= $1 or interruptions >= 1 then 'worker_interrupted' else error_code end,
+           error = case when attempts >= $1 or interruptions >= 1
+                     then 'The render host stopped the renderer twice before it finished, which usually means the instance ran out of memory for this composition. No output was produced.'
+                     else error end,
+           diagnostics = coalesce($2::jsonb, diagnostics),
+           progress = 0,
+           interruptions = interruptions + 1,
+           updated_at = now()
          where status = 'running'`,
-        [MAX_ATTEMPTS],
+        [MAX_ATTEMPTS, diagnostics ? JSON.stringify(diagnostics) : null],
       );
+      return result.rowCount;
     },
   };
 }

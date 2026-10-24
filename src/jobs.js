@@ -6,7 +6,8 @@ import { buildPlan } from './render/plan.js';
 import { probe, renderPlan } from './render/ffmpeg.js';
 import { validateOutput } from './render/validate.js';
 import { resolveFonts, extractFontIds } from './render/fonts.js';
-import { renderMotion, motionPlanFrom } from './render/motion.js';
+import { renderMotion, motionPlanFrom, resolveRemotionConcurrency } from './render/motion.js';
+import { cgroupMemory } from './resources.js';
 
 /** Operations this worker actually performs. Analysis operations are not implemented yet. */
 export const SUPPORTED_OPERATIONS = new Set(['render_preview', 'render_master', 'render_motion', 'validate']);
@@ -23,12 +24,35 @@ export async function processJob(job, { db, storage, config, signal }) {
   await fs.mkdir(dir, { recursive: true });
 
   let lastWrite = 0;
-  const report = async (value, force = false) => {
+  let finished = false;
+  const inFlight = new Set();
+
+  const report = (value, force = false) => {
+    if (finished) return Promise.resolve();
     const now = Date.now();
-    if (!force && now - lastWrite < 1500) return;
+    if (!force && now - lastWrite < 1500) return Promise.resolve();
     lastWrite = now;
-    await db.update(job.id, { progress: Number(value.toFixed(4)) });
+    const write = db.update(job.id, { progress: Number(value.toFixed(4)) })
+      .catch(() => {})
+      .finally(() => inFlight.delete(write));
+    inFlight.add(write);
+    return write;
   };
+
+  /**
+   * Writes the terminal row, and stops progress reporting before it does: a progress
+   * tick still in flight when the render finishes would otherwise land afterwards and
+   * leave a finished job showing a partial figure.
+   */
+  const finish = async (fields) => {
+    finished = true;
+    await Promise.allSettled([...inFlight]);
+    return db.update(job.id, fields);
+  };
+
+  // What the motion renderer's own process did — kept for the failed row, where it is
+  // the difference between "the browser was killed" and "the file was wrong".
+  let motionEvidence = null;
 
   try {
     if (!SUPPORTED_OPERATIONS.has(job.operation)) {
@@ -85,12 +109,28 @@ export async function processJob(job, { db, storage, config, signal }) {
     // Motion graphics render in Remotion; every other operation is the FFmpeg pipeline.
     let motion = null;
     if (isMotion) {
+      // Safe limit: a motion render needs a browser, and a container too small to hold
+      // one is refused here — with the measured numbers — instead of being crashed into
+      // by the host, attempt after attempt, until the job gives up.
+      const memory = await cgroupMemory();
+      if (memory.limit_bytes && memory.limit_bytes < config.motionMinMemoryBytes) {
+        throw new JobError(
+          'insufficient_memory',
+          `This render was stopped before it started: the render host has ${memory.limit_mb} MB of memory and a motion render needs at least ${Math.round(config.motionMinMemoryBytes / (1024 * 1024))} MB. Nothing was rendered.`,
+        );
+      }
       motion = await renderMotion(job.inputs.composition, {
         outFile,
         workDir: dir,
         signal,
         onProgress: (fraction) => report(encode(fraction)).catch(() => {}),
       });
+      motionEvidence = {
+        mode: 'motion',
+        concurrency: motion.concurrency,
+        exit: motion.exit,
+        host_memory: memory,
+      };
     } else {
       await renderPlan(plan, files, {
         outFile,
@@ -108,12 +148,15 @@ export async function processJob(job, { db, storage, config, signal }) {
       validation.mode = 'motion';
       validation.engine = motion.engine;
       validation.motion = motion.verification;
+      validation.exit = motion.exit;
+      validation.concurrency = motion.concurrency;
     }
     await report(0.97, true);
     if (!validation.passed) {
-      return db.update(job.id, {
+      return finish({
         status: 'failed',
         validation,
+        diagnostics: motionEvidence,
         error_code: 'validation_failed',
         error: 'The rendered file did not pass validation.',
         completed_at: new Date(),
@@ -122,12 +165,13 @@ export async function processJob(job, { db, storage, config, signal }) {
 
     const key = `renders/${job.id}/output.mp4`;
     await storage.put(key, outFile, 'video/mp4');
-    return db.update(job.id, {
+    return finish({
       status: 'succeeded',
       progress: 1,
       output_key: key,
       output_duration: validation.actual.duration_seconds,
       validation,
+      diagnostics: motionEvidence,
       error_code: null,
       error: null,
       completed_at: new Date(),
@@ -135,14 +179,32 @@ export async function processJob(job, { db, storage, config, signal }) {
   } catch (error) {
     const current = await db.get(job.id);
     if (signal.aborted || current?.status === 'canceled') {
-      return db.update(job.id, { status: 'canceled', completed_at: new Date() });
+      return finish({ status: 'canceled', diagnostics: motionEvidence, completed_at: new Date() });
     }
     const safe = error instanceof JobError;
     if (!safe) console.error('[job]', job.id, error?.stack || error);
-    return db.update(job.id, {
+
+    // How the renderer's process ended travels with the failure, so the row says
+    // whether the browser was killed (signal, exit code) or the file was bad.
+    const evidence = error?.exit
+      ? { ...(motionEvidence || { mode: 'motion' }), exit: error.exit }
+      : motionEvidence;
+
+    return finish({
       status: 'failed',
       error_code: safe ? error.code : 'internal_error',
       error: safe ? error.message : 'Rendering failed because of an internal worker error.',
+      ...(evidence
+        ? {
+            validation: {
+              mode: evidence.mode || 'motion',
+              exit: evidence.exit || null,
+              concurrency: evidence.concurrency || resolveRemotionConcurrency(),
+              host_memory: evidence.host_memory || null,
+            },
+          }
+        : {}),
+      diagnostics: evidence,
       completed_at: new Date(),
     });
   } finally {

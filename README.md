@@ -70,7 +70,9 @@ Jobs are stored in Postgres. If the process crashes, any running job is put back
 | `S3_REGION` | `auto` for R2, e.g. `eu-central-1` for AWS |
 | `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` | Bucket-scoped key |
 | `ALLOWED_SOURCE_HOSTS` | Comma-separated hosts Base44 signed URLs come from (e.g. `base44.app,supabase.co`) |
-| `RENDER_CONCURRENCY` | `1` (raise it only on larger instances) |
+| `RENDER_CONCURRENCY` | `1` (raise it only on larger instances; never above 2) |
+| `REMOTION_CONCURRENCY` | Frames the motion renderer draws at once. Default: half the cores, at most 2 — an extra browser tab costs hundreds of MB |
+| `MOTION_MIN_MEMORY_MB` | `1024`. A motion job is refused, quoting the instance's measured memory, when the container cannot hold a browser |
 | `MAX_SOURCE_BYTES` | Default 2 GB |
 | `DOWNLOAD_URL_TTL_SECONDS` | Signed output URL lifetime, default 900 |
 
@@ -80,7 +82,9 @@ Jobs are stored in Postgres. If the process crashes, any running job is put back
 2. In Render, go to **New → Blueprint**, select the repository, and fill in the variables marked `sync: false`.
 3. Wait for the deploy, then check the service:
    - `curl https://<service>.onrender.com/health` should return `{"ok":true}`.
-   - `curl -H "Authorization: Bearer $TOKEN" https://<service>.onrender.com/health/deep` should report the database and storage as `true` and show the FFmpeg version.
+   - `curl -H "Authorization: Bearer $TOKEN" https://<service>.onrender.com/health/deep` should report the database and storage as `true`, show the FFmpeg version, and report `resources` (the container's measured memory limit and use), `motion_concurrency` and `active_jobs`.
+
+   If a render is interrupted, the evidence is on the job row — `diagnostics` (exit code, signal, kill reason, peak RSS of the whole render process group) and `interruptions` — and in the log: the `[boot]` line prints the instance's memory ceiling, and `[motion] render process group rss=…` prints the render's memory every 30 seconds. Together they separate a host kill from a bad render; `/health` (the light probe) is what the platform's health check must point at, so a busy renderer is never judged unhealthy for being busy.
 4. Test the engine inside the image: `docker build -t pov39-render-worker worker && docker run --rm pov39-render-worker npm run selftest`. It exits with code 0 and prints a passing validation report.
 5. Only then, set these in Base44 Secrets: `VIDEO_PROCESSING_URL=https://<service>.onrender.com` and `VIDEO_PROCESSING_TOKEN` (the same value as on the worker).
 6. Run a real end-to-end render from POV39 using an uploaded clip. Rendering counts as connected only after that render succeeds and passes validation.
@@ -117,4 +121,3 @@ Idempotency-Key: <RenderJobs record id>
   "inputs": { "timeline": { "tracks": [...], "subtitles": {...}, "output": {...} },
               "sources": { "<asset_id>": "https://…signed…" } },
   "output_spec": { "width": 1080, "height": 1920, "fps": 30 } }
-`

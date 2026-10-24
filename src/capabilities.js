@@ -12,7 +12,7 @@ import { SUPPORTED_OPERATIONS } from './jobs.js';
  * the browser, the motion project — and never by assuming.
  */
 
-export const WORKER_VERSION = process.env.WORKER_VERSION || '1.1.0';
+export const WORKER_VERSION = process.env.WORKER_VERSION || '1.2.0';
 
 const CHROME_CANDIDATES = [
   process.env.REMOTION_CHROME_PATH,

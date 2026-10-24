@@ -1,13 +1,18 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { JobError } from '../errors.js';
+import { processGroupRss } from '../resources.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
 /** The Remotion project that owns the motion composition. */
 export const MOTION_PROJECT_DIR = path.resolve(here, '..', '..', 'remotion');
+
+/** How often the render's memory is written to the log, so a kill has a number before it. */
+const HEARTBEAT_MS = 30000;
 
 const ALLOWED_FPS = [24, 25, 30, 50, 60];
 const MAX_SCENES = 24;
@@ -54,6 +59,20 @@ export function motionPlanFrom(composition) {
   };
 }
 
+/**
+ * How many frames the renderer may render at once.
+ *
+ * Remotion's own default spreads frames across as many browser tabs as the machine has
+ * cores, and every tab costs hundreds of megabytes — on a small instance that alone is
+ * what exhausts the container. Concurrency is therefore decided here, memory first, and
+ * can only be raised deliberately through the environment.
+ */
+export function resolveRemotionConcurrency() {
+  const explicit = Number(process.env.REMOTION_CONCURRENCY);
+  if (Number.isFinite(explicit) && explicit >= 1) return Math.min(4, Math.floor(explicit));
+  return Math.max(1, Math.min(2, Math.floor((os.cpus().length || 1) / 2)));
+}
+
 function nodeArgs(script, args) {
   return [path.join(MOTION_PROJECT_DIR, 'scripts', script), ...args];
 }
@@ -62,27 +81,67 @@ function nodeArgs(script, args) {
  * Runs one of the Remotion project's scripts and streams its progress lines.
  * The composition is passed as a file: it is data for the renderer, never code
  * this worker evaluates.
+ *
+ * The script runs as its own process group and is torn down as a group. Killing only
+ * the node process would leave its Chromium children behind, holding the memory the
+ * next attempt needs — and how the process actually ended is recorded here rather than
+ * guessed afterwards, which is what tells an out-of-memory kill apart from a bad render.
  */
-function runScript(script, args, { onLine, signal, timeoutMs }) {
+function runScript(script, args, { onLine, signal, timeoutMs, sample }) {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      return reject(new JobError('motion_canceled', 'The motion render was stopped.'));
+    }
+
     const child = spawn(process.execPath, nodeArgs(script, args), {
       cwd: MOTION_PROJECT_DIR,
       env: {
         ...process.env,
         ...(process.env.REMOTION_CHROME_PATH ? { REMOTION_CHROME_PATH: process.env.REMOTION_CHROME_PATH } : {}),
       },
-      signal,
+      detached: true,
     });
 
     let stdout = '';
     let stderr = '';
-    let killed = false;
-    const timer = timeoutMs
-      ? setTimeout(() => {
-          killed = true;
-          child.kill('SIGKILL');
-        }, timeoutMs)
+    let killedBy = '';
+    let peakBytes = 0;
+    let settled = false;
+    let lastHeartbeat = Date.now();
+
+    const killGroup = (reason) => {
+      if (killedBy) return;
+      killedBy = reason;
+      // Negative pid: the whole group, so Chromium dies with the script that opened it.
+      try { process.kill(-child.pid, 'SIGKILL'); } catch {}
+      try { child.kill('SIGKILL'); } catch {}
+    };
+
+    const timer = timeoutMs ? setTimeout(() => killGroup('timeout'), timeoutMs) : null;
+    const onAbort = () => killGroup('aborted');
+    signal?.addEventListener?.('abort', onAbort, { once: true });
+
+    const sampler = sample
+      ? setInterval(() => {
+          processGroupRss(child.pid)
+            .then((bytes) => {
+              if (bytes > peakBytes) peakBytes = bytes;
+              // A heart line in the log. If the host kills this process, the last number
+              // printed before it vanished is what says whether it ran out of room.
+              if (Date.now() - lastHeartbeat > HEARTBEAT_MS) {
+                lastHeartbeat = Date.now();
+                console.log(`[motion] render process group rss=${Math.round(bytes / 1024 / 1024)}MB peak=${Math.round(peakBytes / 1024 / 1024)}MB`);
+              }
+            })
+            .catch(() => {});
+        }, 2000)
       : null;
+
+    const cleanup = () => {
+      if (timer) clearTimeout(timer);
+      if (sampler) clearInterval(sampler);
+      signal?.removeEventListener?.('abort', onAbort);
+    };
 
     child.stdout.on('data', (chunk) => {
       const text = chunk.toString();
@@ -96,15 +155,39 @@ function runScript(script, args, { onLine, signal, timeoutMs }) {
     });
 
     child.on('error', (error) => {
-      if (timer) clearTimeout(timer);
+      if (settled) return;
+      settled = true;
+      cleanup();
       reject(error);
     });
-    child.on('close', (code) => {
-      if (timer) clearTimeout(timer);
-      if (code === 0) return resolve({ stdout, stderr });
-      if (killed) return reject(new JobError('motion_timeout', 'The motion renderer ran out of time.'));
+
+    child.on('close', (code, signalName) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+
+      const exit = {
+        code: Number.isFinite(code) ? code : null,
+        signal: signalName || '',
+        killed_by: killedBy || (signalName ? 'signal' : ''),
+        peak_rss_mb: Math.round(peakBytes / 1024 / 1024),
+      };
+
+      if (code === 0) return resolve({ stdout, stderr, exit });
+      if (killedBy === 'timeout') {
+        const error = new JobError('motion_timeout', 'The motion renderer ran out of time.');
+        error.exit = exit;
+        return reject(error);
+      }
+      if (killedBy === 'aborted') {
+        const error = new JobError('motion_canceled', 'The motion render was stopped.');
+        error.exit = exit;
+        return reject(error);
+      }
       const tail = (stderr || stdout).split('\n').filter(Boolean).slice(-6).join(' | ');
-      return reject(new JobError('motion_render_failed', `The motion renderer failed: ${tail.slice(0, 600)}`));
+      const error = new JobError('motion_render_failed', `The motion renderer failed: ${tail.slice(0, 600)}`);
+      error.exit = exit;
+      return reject(error);
     });
   });
 }
@@ -122,19 +205,21 @@ export async function renderMotion(composition, { outFile, workDir, signal, onPr
 
   await fs.writeFile(compositionFile, JSON.stringify(composition, null, 2));
   const timeoutMs = Number(process.env.REMOTION_TIMEOUT_SECONDS || 1800) * 1000;
+  const concurrency = resolveRemotionConcurrency();
 
   const total = plan.duration * plan.fps;
-  await runScript(
+  const run = await runScript(
     'render-motion.mjs',
     [
       '--composition', compositionFile,
       '--out', outFile,
       '--result', resultFile,
-      ...(process.env.REMOTION_CONCURRENCY ? ['--concurrency', String(process.env.REMOTION_CONCURRENCY)] : []),
+      '--concurrency', String(concurrency),
     ],
     {
       timeoutMs,
       signal,
+      sample: true,
       onLine: (line) => {
         const frames = /\[motion\] (\d+)\/(\d+) frames/.exec(line);
         if (frames && onProgress) onProgress(Number(frames[1]) / Number(frames[2]));
@@ -164,6 +249,8 @@ export async function renderMotion(composition, { outFile, workDir, signal, onPr
 
   return {
     plan,
+    concurrency,
+    exit: run.exit,
     engine: { engine: 'remotion', package: '@remotion/renderer', composition_id: 'POV39Motion', frames: render.duration_in_frames },
     render,
     verification: {
