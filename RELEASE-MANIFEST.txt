@@ -1,0 +1,50 @@
+POV39 render worker - release manifest
+Version: 1.1.0 (WORKER_VERSION default in src/capabilities.js)
+Source: Base44 worker/ tree at commit f815f3652a76c73034204ae2ee6d004e088dcba3 (branch main)
+Archive: pov39-render-worker-v1.1.0.zip - contents sit at the archive root
+Exclusions: no secret or environment files, no dependency folders, no logs or temp artifacts (built from tracked source only)
+
+bytes       sha256(16)         path
+      36    29c8a38fa18e30d5    .dockerignore
+      94    251d91a00967f344    .gitignore
+    1261    ad96a2bc5616c3e4    Dockerfile
+    8021    578392a2c7dac5b3    README.md
+   51558    f2f211b7e4f5a3f7    package-lock.json
+     450    3e1080422f14cca5    package.json
+     596    6732cf786d25fa0a    remotion/package.json
+  576044    1deeca5cb32c1066    remotion/public/bed-neutral.wav
+    3389    5c4fff0022247b65    remotion/scripts/local-chromium.mjs
+    2001    9b3d586ca9f3a447    remotion/scripts/make-bed.mjs
+    5622    ba0c282b388c2165    remotion/scripts/render-motion.mjs
+    6902    8a8c2645dbf948a6    remotion/scripts/verify-motion.mjs
+    3337    93d1be23a76121ad    remotion/src/MotionComposition.jsx
+     903    860c719d1dd12768    remotion/src/Root.jsx
+    2618    43915289a1cf1a68    remotion/src/components/AnimatedText.jsx
+    3914    511f3e1cab90c13b    remotion/src/components/Background.jsx
+    8693    d62fb8be539a9e10    remotion/src/components/SceneBody.jsx
+    1664    5b17aa343eeec4cb    remotion/src/components/SceneFrame.jsx
+    1916    579920aff86dd56a    remotion/src/format.js
+     112    306e785640b1ff7b    remotion/src/index.js
+    2217    66b5223d53300235    remotion/src/useBrandFonts.js
+    2444    da5bd89639ba604f    remotion/test/fixtures/pov39-launch-ad.json
+     908    3c354e7433e5e704    render.yaml
+     576    ca4cc92f9d6e57ad    src/auth.js
+    3350    6f97b8ab747c578a    src/capabilities.js
+    1758    ca56eb64717a978f    src/config.js
+    3774    d6447cc9f7ce624d    src/db.js
+    2570    791678c4cc6f130f    src/download.js
+     207    1a593dff3db65a24    src/errors.js
+    6298    22d2c114d5f8644d    src/jobs.js
+    1221    708155e536e1cd6b    src/keys.js
+     984    57f3b74dd3d88da6    src/queue.js
+    6845    68245f880fe2cf05    src/render/ffmpeg.js
+    5143    daf75878714e2224    src/render/fonts.js
+    6461    64b052d90deb9fc4    src/render/motion.js
+    3725    832716d105b0cf9e    src/render/plan.js
+    2291    20b7ff914744dc24    src/render/validate.js
+    2102    d7fd0a5a34bbfd00    src/selftest.js
+    8699    d12a7482f7ae7285    src/server.js
+    1960    4976fbdaf7538ed6    src/sources.js
+    2978    6dd1128dfdab33ab    src/storage.js
+    2600    f7c2050a349a837b    src/storageRoutes.js
+    1825    85aa8a04bea825a7    test/security.test.js

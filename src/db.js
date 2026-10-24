@@ -1,4 +1,10 @@
-import pg from 'pg';
+import { createRequire } from 'node:module';
+
+// Loaded at runtime, never as a bare import: this worker's dependencies are Node
+// packages, and a bare specifier here gets resolved by any browser-side module graph that
+// touches the file (the app's dev server scans the repository the worker lives in).
+const require = createRequire(import.meta.url);
+const pg = require('pg');
 
 const MAX_ATTEMPTS = 3;
 

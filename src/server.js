@@ -1,15 +1,19 @@
 import crypto from 'node:crypto';
-import express from 'express';
+import { createRequire } from 'node:module';
 import { loadConfig } from './config.js';
 import { requireBearer } from './auth.js';
 import { createDb } from './db.js';
 import { createStorage } from './storage.js';
 import { createQueue } from './queue.js';
 import { KNOWN_OPERATIONS, SUPPORTED_OPERATIONS } from './jobs.js';
+import { capabilities, WORKER_VERSION } from './capabilities.js';
 import { ffmpegVersion } from './render/ffmpeg.js';
 import { checkSourceUrl } from './download.js';
 import { isSafeId, belongsTo } from './keys.js';
 import { storageRoutes } from './storageRoutes.js';
+
+const require = createRequire(import.meta.url);
+const express = require('express');
 
 const config = loadConfig();
 const db = createDb(config.databaseUrl);
@@ -70,6 +74,15 @@ function validateRequest(body) {
   if (!KNOWN_OPERATIONS.has(body.operation)) return 'Unknown operation.';
   if (!body.inputs || typeof body.inputs !== 'object') return 'inputs must be an object.';
   if (SUPPORTED_OPERATIONS.has(body.operation)) {
+    if (body.operation === 'render_motion') {
+      // Motion graphics are rendered from a composition: no timeline, no sources.
+      const composition = body.inputs.composition;
+      if (!composition || typeof composition !== 'object' || Array.isArray(composition)) return 'inputs.composition is required.';
+      if (!Array.isArray(composition.scenes) || !composition.scenes.length) return 'inputs.composition needs at least one scene.';
+      if (JSON.stringify(composition).length > 200000) return 'inputs.composition is too large.';
+      if (!isSafeId(body.inputs.workspace_id)) return 'inputs.workspace_id is required.';
+      return '';
+    }
     if (!body.inputs.timeline || typeof body.inputs.timeline !== 'object') return 'inputs.timeline is required.';
     if (!isSafeId(body.inputs.workspace_id)) return 'inputs.workspace_id is required.';
     const problem = validateSources(body.inputs.sources, body.inputs.workspace_id);
@@ -95,8 +108,30 @@ app.get('/health/deep', auth, async (_req, res) => {
   try { await db.pool.query('select 1'); result.database = true; } catch {}
   try { await storage.check(); result.storage = true; } catch {}
   try { result.ffmpeg = await ffmpegVersion(); } catch {}
+  const caps = await capabilities();
+  // Motion graphics are reported separately: a worker that edits footage but has no
+  // browser is healthy for editing and unsuitable for "create from scratch".
   const ok = result.database && result.storage && Boolean(result.ffmpeg);
-  res.status(ok ? 200 : 503).json({ ok, ...result, active_jobs: queue.active(), concurrency: config.concurrency });
+  res.status(ok ? 200 : 503).json({
+    ok,
+    ...result,
+    version: WORKER_VERSION,
+    operations: caps.operations,
+    motion_ready: caps.motion.ready,
+    motion: caps.motion,
+    active_jobs: queue.active(),
+    concurrency: config.concurrency,
+  });
+});
+
+// What this build can actually do. The app checks this before it charges anyone, so an
+// incompatible renderer is refused up front instead of dispatched into a refusal.
+app.get('/capabilities', auth, async (_req, res) => {
+  try {
+    res.json(await capabilities());
+  } catch {
+    res.status(500).json({ error: 'capabilities_unavailable' });
+  }
 });
 
 app.post('/jobs', auth, async (req, res, next) => {

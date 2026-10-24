@@ -1,10 +1,13 @@
 import fs from 'node:fs';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import {
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const {
   S3Client, PutObjectCommand, GetObjectCommand, HeadObjectCommand, DeleteObjectCommand, HeadBucketCommand,
-} from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+} = require('@aws-sdk/client-s3');
+const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 
 /** Private S3-compatible bucket (Cloudflare R2 or AWS S3). Objects are never public. */
 export function createStorage(c) {

@@ -5,12 +5,14 @@ import { fetchSource, removeSourceCopies } from './sources.js';
 import { buildPlan } from './render/plan.js';
 import { probe, renderPlan } from './render/ffmpeg.js';
 import { validateOutput } from './render/validate.js';
+import { resolveFonts, extractFontIds } from './render/fonts.js';
+import { renderMotion, motionPlanFrom } from './render/motion.js';
 
 /** Operations this worker actually performs. Analysis operations are not implemented yet. */
-export const SUPPORTED_OPERATIONS = new Set(['render_preview', 'render_master', 'validate']);
+export const SUPPORTED_OPERATIONS = new Set(['render_preview', 'render_master', 'render_motion', 'validate']);
 export const KNOWN_OPERATIONS = new Set([
   'transcribe', 'scene_detect', 'frame_extract', 'audio_analyse', 'subtitles',
-  'compile_timeline', 'render_preview', 'render_master', 'validate',
+  'compile_timeline', 'render_preview', 'render_master', 'render_motion', 'validate',
 ]);
 
 // Progress budget: download 0–15%, encode 15–90%, validate 90–97%, upload 97–100%.
@@ -33,12 +35,17 @@ export async function processJob(job, { db, storage, config, signal }) {
       throw new JobError('unsupported_operation', `This worker does not perform "${job.operation}" yet.`);
     }
 
-    const plan = buildPlan(job.inputs.timeline, job.output_spec, { preview: job.operation === 'render_preview' });
+    // A motion job carries a composition instead of a timeline: no source media
+    // to download, no FFmpeg plan — the composition is the whole render.
+    const isMotion = job.operation === 'render_motion';
+    const plan = isMotion
+      ? motionPlanFrom(job.inputs.composition)
+      : buildPlan(job.inputs.timeline, job.output_spec, { preview: job.operation === 'render_preview' });
     const sources = job.inputs.sources || {};
 
     const files = {};
     const download = stage(0, 0.15);
-    for (const [i, assetId] of plan.assetIds.entries()) {
+    for (const [i, assetId] of (isMotion ? [] : plan.assetIds).entries()) {
       const url = sources[assetId];
       if (!url) throw new JobError('missing_source', `No source file was provided for asset ${assetId}.`);
       const file = path.join(dir, `source_${i}`);
@@ -57,18 +64,51 @@ export async function processJob(job, { db, storage, config, signal }) {
       await report(download((i + 1) / plan.assetIds.length), true);
     }
 
+    // Resolve font_id references to local font files before rendering
+    const fontIds = isMotion ? [] : extractFontIds(plan);
+    let fonts = {};
+    if (fontIds.length && config.fontResolverUrl && config.serviceToken) {
+      const result = await resolveFonts(fontIds, {
+        appUrl: config.fontResolverUrl,
+        serviceToken: config.serviceToken,
+      });
+      fonts = result.fonts;
+      if (result.errors.length) {
+        // Report font resolution errors but don't fail — the renderer falls back to Noto Sans
+        console.warn('[job]', job.id, 'Font resolution errors:', JSON.stringify(result.errors));
+      }
+    }
+
     const outFile = path.join(dir, 'output.mp4');
     const encode = stage(0.15, 0.9);
-    await renderPlan(plan, files, {
-      outFile,
-      workDir: dir,
-      quality: job.operation === 'render_master' ? 'master' : 'preview',
-      signal,
-      onProgress: (fraction) => report(encode(fraction)).catch(() => {}),
-    });
+
+    // Motion graphics render in Remotion; every other operation is the FFmpeg pipeline.
+    let motion = null;
+    if (isMotion) {
+      motion = await renderMotion(job.inputs.composition, {
+        outFile,
+        workDir: dir,
+        signal,
+        onProgress: (fraction) => report(encode(fraction)).catch(() => {}),
+      });
+    } else {
+      await renderPlan(plan, files, {
+        outFile,
+        workDir: dir,
+        quality: job.operation === 'render_master' ? 'master' : 'preview',
+        signal,
+        onProgress: (fraction) => report(encode(fraction)).catch(() => {}),
+        fonts,
+      });
+    }
     await report(0.9, true);
 
     const validation = await validateOutput(outFile, plan);
+    if (motion) {
+      validation.mode = 'motion';
+      validation.engine = motion.engine;
+      validation.motion = motion.verification;
+    }
     await report(0.97, true);
     if (!validation.passed) {
       return db.update(job.id, {

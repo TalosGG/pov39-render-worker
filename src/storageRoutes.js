@@ -1,4 +1,7 @@
-import express from 'express';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const express = require('express');
 import { UPLOAD_TYPES, newUploadKey, isUploadKey, isReadableKey, isSafeId } from './keys.js';
 
 /**

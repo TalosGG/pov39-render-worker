@@ -1,0 +1,76 @@
+{
+  "meta": { "title": "POV39 Launch Ad", "width": 1080, "height": 1920, "fps": 30, "duration_seconds": 15 },
+  "theme": {
+    "background": "#0B0B12",
+    "surface": "rgba(255,255,255,0.05)",
+    "border": "rgba(255,255,255,0.14)",
+    "primary": "#4763FF",
+    "accent": "#8FA6FF",
+    "text": "#FFFFFF",
+    "muted": "#C9D2E8",
+    "on_primary": "#FFFFFF",
+    "pattern": "glow",
+    "brand_name": "POV39"
+  },
+  "brand": { "name": "POV39", "logo_url": null },
+  "audio": { "enabled": true, "volume": 0.4 },
+  "scenes": [
+    {
+      "id": "hook",
+      "kind": "title",
+      "layout": "centered",
+      "duration_seconds": 3,
+      "kicker": "POV39",
+      "headline": "Every frame on brand.",
+      "subheadline": "AI video for teams that have to ship.",
+      "motion": "rise",
+      "emphasis_words": ["brand"],
+      "transition": { "type": "fade", "duration_seconds": 0.5 }
+    },
+    {
+      "id": "brand-brain",
+      "kind": "statement",
+      "layout": "lower_third",
+      "duration_seconds": 3.2,
+      "headline": "Brand Brain writes in your voice",
+      "subheadline": "Tone, palette and rules applied to every scene.",
+      "bullets": ["Your tone", "Your palette", "Your claims"],
+      "motion": "rise",
+      "transition": { "type": "slide", "duration_seconds": 0.45 }
+    },
+    {
+      "id": "stat",
+      "kind": "stat",
+      "layout": "split",
+      "duration_seconds": 3.2,
+      "kicker": "Speed",
+      "headline": "First cut in one pass",
+      "subheadline": "Brief to storyboard to rendered master.",
+      "stat": { "value": 39, "suffix": "%", "label": "faster to a reviewable cut" },
+      "motion": "rise",
+      "transition": { "type": "wipe", "duration_seconds": 0.4 }
+    },
+    {
+      "id": "features",
+      "kind": "feature",
+      "layout": "grid",
+      "duration_seconds": 3.2,
+      "headline": "One prompt in, campaign out",
+      "bullets": ["Structured briefs", "Validated storyboards", "Motion masters", "Version history"],
+      "motion": "rise",
+      "emphasis_words": ["campaign"],
+      "transition": { "type": "fade", "duration_seconds": 0.4 }
+    },
+    {
+      "id": "cta",
+      "kind": "cta",
+      "layout": "centered",
+      "duration_seconds": 2.4,
+      "headline": "Start your first cut free",
+      "subheadline": "No footage required.",
+      "cta_label": "pov39.ai/start",
+      "motion": "scale",
+      "transition": { "type": "fade", "duration_seconds": 0.35 }
+    }
+  ]
+}

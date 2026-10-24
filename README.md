@@ -12,7 +12,7 @@ A separate Docker service that renders validated POV39 timelines into H.264/AAC 
 | `GET /jobs/:id` | Bearer | Status, real progress (0–1), validation report and a short-lived signed output URL |
 | `POST /jobs/:id/cancel` | Bearer | Cancels the job and stops FFmpeg if it is running |
 
-Supported operations: `render_preview` (≤720p long side, fast), `render_master` (full resolution, CRF 18), `validate` (render plus a full validation report). Analysis operations (`transcribe`, `scene_detect`, …) return `422 unsupported_operation` until they are implemented.
+Supported operations: `render_preview` (≤720p long side, fast), `render_master` (full resolution, CRF 18), `render_motion` (motion graphics rendered from a composition, no source footage), `validate` (render plus a full validation report). Capability report: `GET /capabilities` (Bearer) answers what this build can actually do — see below. Analysis operations (`transcribe`, `scene_detect`, …) return `422 unsupported_operation` until they are implemented.
 
 Each job goes through these steps:
 
@@ -23,6 +23,33 @@ Each job goes through these steps:
 5. It uploads the result to `renders/<job>/output.mp4`.
 
 A file that fails validation is never uploaded, and the job is marked `failed` with the report attached.
+
+## Capability reporting
+
+Editing footage and rendering motion graphics are separate capabilities, and the app must
+never charge for a job this build cannot perform. `GET /capabilities` (Bearer) answers:
+
+```json
+{ "version": "1.1.0",
+  "operations": ["render_master", "render_motion", "render_preview", "validate"],
+  "motion": { "ready": true, "chromium_path": "/usr/bin/chromium",
+              "chromium": "Chromium 120.0.6099.224", "project": true, "remotion": "^4.0.538", "reason": "" } }
+```
+
+`motion.ready` is true only when this image really has the motion project *and* a browser
+that starts. `reason` says which of the two is missing. `/health/deep` reports the same
+values as `version`, `operations`, `motion_ready` and `motion`, and stays healthy on a
+worker that renders footage but has no browser.
+
+## Motion graphics (create from scratch)
+
+`render_motion` renders a **motion composition** instead of a cut timeline: no source files and no FFmpeg filtergraph. The composition — brand colours, copy and scene list — arrives as data and is rendered with Remotion from `worker/remotion`, using the Chromium installed in this image (`REMOTION_CHROME_PATH`, default `/usr/bin/chromium`).
+
+* The contract and its clamps live in `remotion/src/format.js`; the app-side builder is `base44/shared/motion.ts`, and the worker re-validates every value before rendering (`src/render/motion.js`). Only validated composition data is accepted: no generated code and no shell commands are ever executed.
+* The file is checked twice: the standard validation above, plus `remotion/scripts/verify-motion.mjs`, which samples real frames and proves they change over time.
+* The result is stored under the same key as any other render (`renders/<job>/output.mp4`), so playback uses the existing signed storage route.
+* `inputs.composition` is required and size-capped at 200 KB; `inputs.sources` is not used.
+* Without Chromium in the image, the worker falls back to a self-contained browser it unpacks for itself (`remotion/scripts/local-chromium.mjs`), which is slower on start but needs no system packages.
 
 Jobs are stored in Postgres. If the process crashes, any running job is put back in the queue (up to 3 attempts). Signed source URLs are never returned, and errors never contain URLs.
 
@@ -58,6 +85,27 @@ Jobs are stored in Postgres. If the process crashes, any running job is put back
 5. Only then, set these in Base44 Secrets: `VIDEO_PROCESSING_URL=https://<service>.onrender.com` and `VIDEO_PROCESSING_TOKEN` (the same value as on the worker).
 6. Run a real end-to-end render from POV39 using an uploaded clip. Rendering counts as connected only after that render succeeds and passes validation.
 
+## Replacing the running service
+
+The live service is `pov39-render-worker` on Render, described by `worker/render.yaml`.
+Motion graphics only work on a build that carries the Remotion project and a browser, so an
+older deployment has to be replaced rather than patched:
+
+1. Commit the `worker/` folder and push the branch Render deploys from.
+2. In Render, open the service and choose **Manual Deploy → Deploy latest commit** (or let
+   auto-deploy pick the push up).
+3. Let the build finish. The first build after this change installs Chromium and the
+   Remotion dependencies, so it takes several minutes and needs the Standard plan.
+4. Confirm the new build reports itself honestly:
+   `curl -H "Authorization: Bearer $TOKEN" https://pov39-render-worker.onrender.com/capabilities`
+   It must answer `"version": "1.1.0"`, list `render_motion`, and set
+   `"ready": true` under `motion`.
+5. Only then use **Create from scratch** in POV39. Until that check passes, POV39 refuses
+   the job before charging anything, and says why.
+
+A worker that only edits footage stays perfectly valid for every editing flow; the
+capability check exists so the two are never confused.
+
 ## Example job
 
 ```http
@@ -69,4 +117,4 @@ Idempotency-Key: <RenderJobs record id>
   "inputs": { "timeline": { "tracks": [...], "subtitles": {...}, "output": {...} },
               "sources": { "<asset_id>": "https://…signed…" } },
   "output_spec": { "width": 1080, "height": 1920, "fps": 30 } }
-``
+`

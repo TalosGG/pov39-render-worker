@@ -67,7 +67,13 @@ const srtTime = (seconds) => {
  * @param files   { [assetId]: { path, hasAudio } }
  * @param onProgress  0..1 of the encode
  */
-export async function renderPlan(plan, files, { outFile, workDir, quality, signal, onProgress }) {
+/**
+ * Renders the plan to an H.264 / AAC MP4 (yuv420p, faststart).
+ * @param files   { [assetId]: { path, hasAudio } }
+ * @param fonts   { [fontId]: { localPath, fontFamily } }  resolved font files
+ * @param onProgress  0..1 of the encode
+ */
+export async function renderPlan(plan, files, { outFile, workDir, quality, signal, onProgress, fonts = {} }) {
   const { width: w, height: h, fps } = plan;
   const args = ['-hide_banner', '-nostdin', '-y'];
   const filters = [];
@@ -112,7 +118,21 @@ export async function renderPlan(plan, files, { outFile, workDir, quality, signa
     const srtPath = path.join(workDir, 'subtitles.srt');
     await fs.writeFile(srtPath, srt, 'utf8');
     const size = Math.round(h / 28);
-    filters.push(`[cv]subtitles=filename=${srtPath}:force_style='FontName=Noto Sans,FontSize=${size},Outline=2,MarginV=${Math.round(h / 12)}'[sv]`);
+
+    // Resolve the font for subtitles. If a subtitle_font_id is specified on the
+    // plan or on individual cues, use the resolved font file. Otherwise fall back
+    // to Noto Sans (which the worker must have installed).
+    const planFontId = plan.subtitle_font_id;
+    const resolvedFont = planFontId ? fonts[planFontId] : null;
+    const fontName = resolvedFont?.fontFamily || 'Noto Sans';
+    const fontDir = resolvedFont?.localPath ? path.dirname(resolvedFont.localPath) : null;
+
+    // Build the subtitles filter with fontsdir if we have a resolved font file,
+    // so libass can load the font even if it isn't system-installed.
+    const subtitlesOpts = [`filename=${srtPath}`, `force_style='FontName=${fontName},FontSize=${size},Outline=2,MarginV=${Math.round(h / 12)}'`];
+    if (fontDir) subtitlesOpts.push(`fontsdir=${fontDir}`);
+
+    filters.push(`[cv]subtitles=${subtitlesOpts.join(':')}[sv]`);
     videoOut = '[sv]';
   }
 

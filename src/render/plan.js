@@ -75,6 +75,9 @@ export function buildPlan(timeline, outputSpec = {}, { preview = false } = {}) {
         .slice(0, 1000)
     : [];
 
+  // Pass through the subtitle_font_id from the timeline for font resolution
+  const subtitleFontId = timeline.subtitles?.font_id || timeline.subtitle_font_id || null;
+
   return {
     width,
     height,
@@ -83,5 +86,6 @@ export function buildPlan(timeline, outputSpec = {}, { preview = false } = {}) {
     segments,
     cues,
     assetIds: [...new Set(segments.filter((s) => s.type === 'clip').map((s) => s.asset))],
+    subtitle_font_id: subtitleFontId,
   };
 }

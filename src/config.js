@@ -31,5 +31,10 @@ export function loadConfig() {
       .split(',')
       .map((host) => host.trim().toLowerCase())
       .filter(Boolean),
+    // Font resolution: the worker calls the Base44 fontManager function to resolve
+    // font_id references to validated font asset URIs. If unset, the worker falls
+    // back to Noto Sans for subtitles.
+    fontResolverUrl: process.env.FONT_RESOLVER_URL || null,
+    serviceToken: token,
   };
 }
