@@ -11,8 +11,44 @@ A separate Docker service that renders validated POV39 timelines into H.264/AAC 
 | `POST /jobs` | Bearer | Queues a job. `Idempotency-Key` header: a repeat returns the same job (`200`, `idempotent_replay: true`) |
 | `GET /jobs/:id` | Bearer | Status, real progress (0–1), validation report and a short-lived signed output URL |
 | `POST /jobs/:id/cancel` | Bearer | Cancels the job and stops FFmpeg if it is running |
+| `POST /timelines/validate` | Bearer | Checks a timeline against the job's sources without rendering: plan summary, or `422` with every problem |
 
-Supported operations: `render_preview` (≤720p long side, fast), `render_master` (full resolution, CRF 18), `render_motion` (motion graphics rendered from a composition, no source footage), `validate` (render plus a full validation report). Capability report: `GET /capabilities` (Bearer) answers what this build can actually do — see below. Analysis operations (`transcribe`, `scene_detect`, …) return `422 unsupported_operation` until they are implemented.
+Supported operations: `render_preview` (≤720p long side, fast), `render_master` (full resolution, CRF 18), `render_motion` (motion graphics rendered from a composition, no source footage), `validate` (render plus a full validation report), and the analysis operations `frame_extract`, `scene_detect`, `audio_analyse` and — on an image built with the speech model — `transcribe`. Capability report: `GET /capabilities` (Bearer) answers what this build can actually do — see below. `subtitles` and `compile_timeline` return `422 unsupported_operation`.
+
+## Timeline V2 (`schema_version: 2`)
+
+A timeline with `schema_version: 2` (Base44 `validateTimeline()`) is rendered by the compositor
+`src/render/v2/compose.py` (Python + Pillow, a port of the archived POV39 render scripts); a timeline
+without `schema_version` takes the V1 FFmpeg pipeline exactly as before; any other version is refused
+(`unsupported_schema_version`).
+
+* **Rendered:** clips with `fade` (from black), `dissolve` (cross-fade from the outgoing clip's
+  continuing footage) and `slide`; `speaker_zoom` — a punch-in crop of the footage itself around
+  `face_x/face_y`; overlays `lower_third`, `pill`, `credit`, `headline`, `quote`, `stamp`,
+  `image_card` (with the picture blurred behind it), each with an entrance on its `animation` curve
+  and a short exit; audio-track clips mixed at `audio.music_gain_db` under the untouched source
+  speech; burned subtitles (ASS at output resolution, lifted above a lower third, RTL-aware).
+  Sources whose aspect differs from the output are shown whole over a blurred fill of themselves.
+* **Refused, with a named reason** (`error_code` and every problem in `error_details`): clip or
+  image assets not supplied with the job, a declared duration that differs from the tracks,
+  overlays past the program end, a source range that does not fill its slot at its speed,
+  overlapping clips, `map`/`chart`, blank lower thirds carrying zoom values, clips on
+  `overlay`/`title` tracks. See `BASE44-PATCH.md` for the matching Base44 fixes.
+* Frames are streamed: compose.py writes raw RGB to an FFmpeg encoder the worker builds (H.264
+  yuv420p, AAC 48 kHz, faststart). Memory stays at a few frames regardless of length. After
+  validation, stills of the finished file at overlay moments are stored as `preview_frames`.
+* Rendering time (32 s, 1080×1920, CRF 18): 58 s on a 24-core workstation. Expect several times
+  that on a 1 vCPU instance — set `RENDER_TIMEOUT_SECONDS` accordingly.
+
+## Analysis
+
+`frame_extract` (stills at timestamps / an interval / an even spread, plus a contact sheet for
+vision models), `scene_detect` (FFmpeg scene score → cuts and scenes), `audio_analyse` (EBU R128
+loudness, true peak, the silence map, speech ratio) and `transcribe` (offline sherpa-onnx
+Whisper-turbo int8 + Silero VAD; segments carry the VAD's real start/end, there are no word
+timings). Each result includes `media` — the probed file. A finished render can be analysed by
+the workspace that rendered it (`storage_key: renders/<job>/output.mp4`). Transcription runs
+alone on the worker (never beside a render) and is refused below `ASR_MIN_MEMORY_MB`.
 
 Each job goes through these steps:
 
@@ -74,6 +110,11 @@ Jobs are stored in Postgres. If the process crashes, any running job is put back
 | `REMOTION_CONCURRENCY` | Frames the motion renderer draws at once. Default: half the cores, at most 2 — an extra browser tab costs hundreds of MB |
 | `MOTION_MIN_MEMORY_MB` | `1024`. A motion job is refused, quoting the instance's measured memory, when the container cannot hold a browser |
 | `MAX_SOURCE_BYTES` | Default 2 GB |
+| `MAX_IMAGE_BYTES` | Image-card stills, default 25 MB |
+| `RENDER_TIMEOUT_SECONDS` / `ANALYSIS_TIMEOUT_SECONDS` | Per-job time budget, default 3600 / 1800; a job past it fails with `timeout` |
+| `FFMPEG_THREADS` | Threads per FFmpeg process in V2 renders and decoding, default 2 |
+| `PYTHON_BIN` | Interpreter for the V2 compositor, default `python3` |
+| `ASR_MODEL_DIR` / `ASR_VAD_MODEL` / `ASR_MIN_MEMORY_MB` / `ASR_THREADS` | Speech model location (set by the image), memory floor (default 2048), decoder threads (default 2) |
 | `DOWNLOAD_URL_TTL_SECONDS` | Signed output URL lifetime, default 900 |
 
 ## Deploy on Render.com
@@ -85,7 +126,7 @@ Jobs are stored in Postgres. If the process crashes, any running job is put back
    - `curl -H "Authorization: Bearer $TOKEN" https://<service>.onrender.com/health/deep` should report the database and storage as `true`, show the FFmpeg version, and report `resources` (the container's measured memory limit and use), `motion_concurrency` and `active_jobs`.
 
    If a render is interrupted, the evidence is on the job row — `diagnostics` (exit code, signal, kill reason, peak RSS of the whole render process group) and `interruptions` — and in the log: the `[boot]` line prints the instance's memory ceiling, and `[motion] render process group rss=…` prints the render's memory every 30 seconds. Together they separate a host kill from a bad render; `/health` (the light probe) is what the platform's health check must point at, so a busy renderer is never judged unhealthy for being busy.
-4. Test the engine inside the image: `docker build -t pov39-render-worker worker && docker run --rm pov39-render-worker npm run selftest`. It exits with code 0 and prints a passing validation report.
+4. Test the engine inside the image: `docker build -t pov39-render-worker worker && docker run --rm pov39-render-worker npm run selftest`. It exits with code 0 and prints a passing validation report for a V1 and a V2 render. For an analysis worker with transcription, build with `--build-arg WITH_ASR=1` (adds ~600 MB; needs ≥ 2 GB RAM free for the model, so run it as its own service rather than beside renders on a 2 GB instance).
 5. Only then, set these in Base44 Secrets: `VIDEO_PROCESSING_URL=https://<service>.onrender.com` and `VIDEO_PROCESSING_TOKEN` (the same value as on the worker).
 6. Run a real end-to-end render from POV39 using an uploaded clip. Rendering counts as connected only after that render succeeds and passes validation.
 

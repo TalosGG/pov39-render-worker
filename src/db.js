@@ -40,14 +40,18 @@ export function createDb(url) {
       // times the host stopped this worker while the job was running.
       await pool.query('alter table render_jobs add column if not exists diagnostics jsonb');
       await pool.query('alter table render_jobs add column if not exists interruptions int not null default 0');
+      // Analysis output (transcript, scenes, frames, audio profile) and V2 preview stills.
+      await pool.query('alter table render_jobs add column if not exists result jsonb');
+      // What the request asked for, so a reused Idempotency-Key with a different request is refused.
+      await pool.query('alter table render_jobs add column if not exists request_hash text');
     },
 
     /** Inserts once per idempotency key; a repeat returns the existing job. */
-    async insert({ id, idempotencyKey, operation, inputs, outputSpec }) {
+    async insert({ id, idempotencyKey, operation, inputs, outputSpec, requestHash = null }) {
       const inserted = await pool.query(
-        `insert into render_jobs (id, idempotency_key, operation, inputs, output_spec)
-         values ($1, $2, $3, $4, $5) on conflict (idempotency_key) do nothing returning *`,
-        [id, idempotencyKey, operation, inputs, outputSpec],
+        `insert into render_jobs (id, idempotency_key, operation, inputs, output_spec, request_hash)
+         values ($1, $2, $3, $4, $5, $6) on conflict (idempotency_key) do nothing returning *`,
+        [id, idempotencyKey, operation, inputs, outputSpec, requestHash],
       );
       if (inserted.rows[0]) return { job: inserted.rows[0], created: true };
       const existing = await pool.query('select * from render_jobs where idempotency_key = $1', [idempotencyKey]);
@@ -69,12 +73,16 @@ export function createDb(url) {
       return result.rows[0];
     },
 
-    /** Atomically claims the oldest queued job (safe with several workers on one database). */
-    async claimNext() {
+    /**
+     * Atomically claims the oldest queued job (safe with several workers on one database).
+     * `exclude` keeps operations that must run alone from starting beside others.
+     */
+    async claimNext({ exclude = [] } = {}) {
       const result = await pool.query(`update render_jobs
         set status = 'running', attempts = attempts + 1, started_at = coalesce(started_at, now()), updated_at = now()
-        where id = (select id from render_jobs where status = 'queued' order by created_at for update skip locked limit 1)
-        returning *`);
+        where id = (select id from render_jobs where status = 'queued' and not (operation = any($1::text[]))
+                    order by created_at for update skip locked limit 1)
+        returning *`, [exclude]);
       return result.rows[0] || null;
     },
 

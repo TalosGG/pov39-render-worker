@@ -2,7 +2,7 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const express = require('express');
-import { UPLOAD_TYPES, newUploadKey, isUploadKey, isReadableKey, isSafeId } from './keys.js';
+import { UPLOAD_TYPES, IMAGE_UPLOAD_TYPES, newUploadKey, isUploadKey, isReadableKey, isSafeId } from './keys.js';
 
 /**
  * Storage endpoints for the Base44 backend only (all behind Bearer auth).
@@ -17,9 +17,10 @@ export function storageRoutes({ storage, config }) {
       const { workspace_id: workspaceId, content_type: contentType } = req.body || {};
       const size = Number(req.body?.size);
       if (!isSafeId(workspaceId)) return res.status(400).json({ error: 'workspace_id is invalid.' });
-      if (!UPLOAD_TYPES[contentType]) return res.status(400).json({ error: 'Only MP4 and MOV video can be uploaded.' });
-      if (!Number.isInteger(size) || size <= 0 || size > config.maxUploadBytes) {
-        return res.status(400).json({ error: 'The file size is not allowed.', max_bytes: config.maxUploadBytes });
+      if (!UPLOAD_TYPES[contentType]) return res.status(400).json({ error: 'Only MP4/MOV video and JPEG/PNG/WebP images can be uploaded.' });
+      const limit = IMAGE_UPLOAD_TYPES.has(contentType) ? config.maxImageBytes : config.maxUploadBytes;
+      if (!Number.isInteger(size) || size <= 0 || size > limit) {
+        return res.status(400).json({ error: 'The file size is not allowed.', max_bytes: limit });
       }
       const key = newUploadKey(workspaceId, contentType);
       const url = await storage.signedPut(key, contentType, size, config.uploadUrlTtl);

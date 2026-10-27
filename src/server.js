@@ -5,11 +5,13 @@ import { requireBearer } from './auth.js';
 import { createDb } from './db.js';
 import { createStorage } from './storage.js';
 import { createQueue } from './queue.js';
-import { KNOWN_OPERATIONS, SUPPORTED_OPERATIONS } from './jobs.js';
+import { SUPPORTED_OPERATIONS, RENDER_OPERATIONS } from './jobs.js';
 import { capabilities, WORKER_VERSION } from './capabilities.js';
 import { ffmpegVersion } from './render/ffmpeg.js';
-import { checkSourceUrl } from './download.js';
-import { isSafeId, belongsTo } from './keys.js';
+import { isSafeId } from './keys.js';
+import { timelineVersion } from './render/timelineV2.js';
+import { JobError } from './errors.js';
+import { createRequests, planSummary, requestHash } from './requests.js';
 import { storageRoutes } from './storageRoutes.js';
 import { resolveRemotionConcurrency } from './render/motion.js';
 import { resourceSnapshot } from './resources.js';
@@ -46,77 +48,7 @@ process.on('unhandledRejection', (reason) => {
   process.exit(1);
 });
 
-/** Never returns inputs (they contain signed source URLs) or storage credentials. */
-async function publicJob(job) {
-  const outputs = [];
-  if (job.status === 'succeeded' && job.output_key) {
-    outputs.push({
-      kind: 'video',
-      storage_key: job.output_key,
-      file_url: await storage.signedGet(job.output_key, config.downloadUrlTtl),
-      url_expires_in: config.downloadUrlTtl,
-      duration_seconds: job.output_duration || 0,
-    });
-  }
-  return {
-    id: job.id,
-    operation: job.operation,
-    status: job.status,
-    progress: job.progress,
-    outputs,
-    validation: job.validation || {},
-    error_code: job.error_code || '',
-    error: job.error || '',
-    attempts: job.attempts,
-    created_at: job.created_at,
-    started_at: job.started_at,
-    completed_at: job.completed_at,
-  };
-}
-
-/** Each source is either an allowlisted HTTPS link or a key under this workspace's upload prefix. */
-function validateSources(sources, workspaceId) {
-  if (!sources || typeof sources !== 'object' || Array.isArray(sources)) return 'inputs.sources must map asset ids to sources.';
-  for (const [assetId, value] of Object.entries(sources)) {
-    if (!isSafeId(assetId)) return 'Source asset ids are invalid.';
-    if (value && typeof value === 'object') {
-      if (!belongsTo(value.storage_key, workspaceId)) return 'A source storage key is not valid for this workspace.';
-      continue;
-    }
-    if (typeof value !== 'string' || value.length > 4000) return 'Every source must be an HTTPS URL or a storage key.';
-    try {
-      checkSourceUrl(value, config.allowedSourceHosts);
-    } catch (error) {
-      return error.message;
-    }
-  }
-  return '';
-}
-
-function validateRequest(body) {
-  if (!body || typeof body !== 'object') return 'Body must be a JSON object.';
-  if (!KNOWN_OPERATIONS.has(body.operation)) return 'Unknown operation.';
-  if (!body.inputs || typeof body.inputs !== 'object') return 'inputs must be an object.';
-  if (SUPPORTED_OPERATIONS.has(body.operation)) {
-    if (body.operation === 'render_motion') {
-      // Motion graphics are rendered from a composition: no timeline, no sources.
-      const composition = body.inputs.composition;
-      if (!composition || typeof composition !== 'object' || Array.isArray(composition)) return 'inputs.composition is required.';
-      if (!Array.isArray(composition.scenes) || !composition.scenes.length) return 'inputs.composition needs at least one scene.';
-      if (JSON.stringify(composition).length > 200000) return 'inputs.composition is too large.';
-      if (!isSafeId(body.inputs.workspace_id)) return 'inputs.workspace_id is required.';
-      return '';
-    }
-    if (!body.inputs.timeline || typeof body.inputs.timeline !== 'object') return 'inputs.timeline is required.';
-    if (!isSafeId(body.inputs.workspace_id)) return 'inputs.workspace_id is required.';
-    const problem = validateSources(body.inputs.sources, body.inputs.workspace_id);
-    if (problem) return problem;
-  }
-  if (body.output_spec !== undefined && (typeof body.output_spec !== 'object' || Array.isArray(body.output_spec))) {
-    return 'output_spec must be an object.';
-  }
-  return '';
-}
+const { publicJob, validateSources, planTimeline, validateRequest } = createRequests({ db, storage, config });
 
 const app = express();
 app.disable('x-powered-by');
@@ -164,21 +96,56 @@ app.get('/capabilities', auth, async (_req, res) => {
   }
 });
 
+// Timeline validation without rendering: the agent checks a plan before it asks for a render.
+app.post('/timelines/validate', auth, async (req, res, next) => {
+  try {
+    const { timeline, output_spec: outputSpec = {}, sources = [], workspace_id: workspaceId } = req.body || {};
+    if (!timeline || typeof timeline !== 'object') return res.status(400).json({ error: 'timeline is required.' });
+    if (!isSafeId(workspaceId)) return res.status(400).json({ error: 'workspace_id is required.' });
+    const problem = await validateSources(sources, workspaceId);
+    if (problem) return res.status(400).json({ error: problem });
+    try {
+      const plan = planTimeline(timeline, outputSpec, sources, req.body.operation || 'render_master');
+      const caps = await capabilities();
+      const renderable = plan.version !== 2 || caps.timeline?.v2?.ready === true;
+      res.json({ ok: true, renderable, ...(renderable ? {} : { reason: caps.timeline?.v2?.reason }), plan: planSummary(plan) });
+    } catch (error) {
+      if (!(error instanceof JobError)) throw error;
+      res.status(422).json({ ok: false, error_code: error.code, error: error.message, error_details: error.details || [] });
+    }
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post('/jobs', auth, async (req, res, next) => {
   try {
-    const problem = validateRequest(req.body);
-    if (problem) return res.status(400).json({ error: problem });
+    const refused = await validateRequest(req.body);
+    if (refused) return res.status(refused.status).json(refused.body);
     if (!SUPPORTED_OPERATIONS.has(req.body.operation)) {
       return res.status(422).json({ error: `This worker does not perform "${req.body.operation}" yet.`, error_code: 'unsupported_operation' });
     }
+    // Never accept work this image cannot do: the app must not charge for it.
+    const caps = await capabilities();
+    if (req.body.operation === 'transcribe' && !caps.analysis?.transcribe?.ready) {
+      return res.status(422).json({ error: caps.analysis?.transcribe?.reason || 'Transcription is not available.', error_code: 'unsupported_operation' });
+    }
+    if (RENDER_OPERATIONS.has(req.body.operation) && timelineVersion(req.body.inputs.timeline) === 2 && !caps.timeline?.v2?.ready) {
+      return res.status(422).json({ error: caps.timeline?.v2?.reason || 'Timeline V2 rendering is not available.', error_code: 'renderer_unavailable' });
+    }
     const key = String(req.get('idempotency-key') || req.body.idempotency_key || '').slice(0, 200) || null;
+    const hash = requestHash(req.body);
     const { job, created } = await db.insert({
       id: crypto.randomUUID(),
       idempotencyKey: key,
       operation: req.body.operation,
       inputs: req.body.inputs,
       outputSpec: req.body.output_spec || {},
+      requestHash: hash,
     });
+    if (!created && job.request_hash && job.request_hash !== hash) {
+      return res.status(409).json({ error: 'This Idempotency-Key was already used for a different request.', error_code: 'idempotency_conflict', id: job.id });
+    }
     if (created) queue.kick();
     res.status(created ? 202 : 200).json({ ...(await publicJob(job)), idempotent_replay: !created });
   } catch (error) {
@@ -217,7 +184,7 @@ app.post('/jobs/:id/sources', auth, async (req, res, next) => {
     if (!job) return res.status(404).json({ error: 'not_found' });
     const retryable = job.status === 'queued' || (job.status === 'failed' && job.error_code === 'source_expired');
     if (!retryable) return res.status(409).json({ error: 'This job cannot take new sources.', ...(await publicJob(job)) });
-    const problem = validateSources(req.body?.sources, job.inputs.workspace_id);
+    const problem = await validateSources(req.body?.sources, job.inputs.workspace_id);
     if (problem) return res.status(400).json({ error: problem });
     const updated = await db.update(job.id, {
       inputs: { ...job.inputs, sources: req.body.sources },
