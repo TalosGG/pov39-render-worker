@@ -29,6 +29,8 @@ export function loadConfig() {
     // the job, with the measured numbers, rather than letting the host kill it.
     motionMinMemoryBytes: Math.max(0, Number(process.env.MOTION_MIN_MEMORY_MB || 1024)) * 1024 * 1024,
     maxSourceBytes: Number(process.env.MAX_SOURCE_BYTES || 2 * 1024 ** 3),
+    // Image-card stills are small; a larger "image" is refused rather than decoded.
+    maxImageBytes: Number(process.env.MAX_IMAGE_BYTES || 25 * 1024 ** 2),
     downloadUrlTtl: Number(process.env.DOWNLOAD_URL_TTL_SECONDS || 900),
     maxUploadBytes: Number(process.env.MAX_UPLOAD_BYTES || 2 * 1024 ** 3),
     uploadUrlTtl: Number(process.env.UPLOAD_URL_TTL_SECONDS || 1800),

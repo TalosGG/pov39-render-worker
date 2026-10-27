@@ -1,3 +1,22 @@
+pov39-render-worker 1.3.0 — release manifest (branch feat/timeline-v2-renderer, NOT DEPLOYED)
+
+CHANGES SINCE 1.2.0
+  - Timeline V2 (schema_version 2) renders through src/render/v2/compose.py: lower thirds, pills,
+    credits, headlines, quotes, stamps, image cards, speaker zoom on the footage, fade/dissolve/slide,
+    music bed under the original speech, ASS subtitles at output resolution. V1 is unchanged.
+  - V2 timelines are refused with named reasons and a full problem list (see BASE44-PATCH.md).
+  - inputs.sources accepts the Base44 mediaPipeline array shape (previously every such request was a 400).
+  - New operations: frame_extract, scene_detect, audio_analyse, transcribe (transcribe only on an image
+    built with WITH_ASR=1; it runs alone). New endpoint: POST /timelines/validate.
+  - Per-job timeouts, Idempotency-Key conflict detection (409), image uploads, preview stills of V2 renders.
+  - Dockerfile adds python3, python3-pil, python3-numpy, libraqm0 (~60 MB). Optional ASR layer ~600 MB.
+  - DB migration (automatic, additive): render_jobs.result jsonb, render_jobs.request_hash text.
+
+KNOWN ISSUE, NOT CHANGED: V1 burned subtitles are ~3.3x too large (SRT through libass is laid out on a
+  288-line canvas, the style sets pixel sizes). V2 does not have this. Fixing V1 changes V1 output, so it
+  waits for approval.
+
+=====================================================================================================
 pov39-render-worker 1.2.0 — release manifest
 
 DEPLOY

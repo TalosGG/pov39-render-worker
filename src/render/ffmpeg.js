@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { JobError } from '../errors.js';
 
-function run(cmd, args, { signal, onStdout } = {}) {
+export function run(cmd, args, { signal, onStdout } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '';
@@ -63,10 +63,39 @@ const srtTime = (seconds) => {
 };
 
 /**
- * Renders the plan to an H.264 / AAC MP4 (yuv420p, faststart).
- * @param files   { [assetId]: { path, hasAudio } }
- * @param onProgress  0..1 of the encode
+ * A filtergraph path: unchanged when it has nothing FFmpeg treats as syntax (every Linux
+ * work path), quoted and escaped otherwise (a Windows drive colon, a quote).
  */
+export function filterPath(file) {
+  const value = String(file).replace(/\\/g, '/');
+  return /[:'[\],;]/.test(value) ? `'${value.replace(/'/g, "'\\''").replace(/:/g, '\\:')}'` : value;
+}
+
+/** Writes the cues as SRT and returns the libass `subtitles=…` filter that burns them in. */
+export async function subtitlesFilter(plan, workDir, fonts = {}) {
+  const { height: h } = plan;
+  const srt = plan.cues
+    .map((cue, i) => `${i + 1}\n${srtTime(cue.start)} --> ${srtTime(cue.end)}\n${cue.text.replace(/\r/g, '')}\n`)
+    .join('\n');
+  const srtPath = path.join(workDir, 'subtitles.srt');
+  await fs.writeFile(srtPath, srt, 'utf8');
+  const size = Math.round(h / 28);
+
+  // Resolve the font for subtitles. If a subtitle_font_id is specified on the
+  // plan or on individual cues, use the resolved font file. Otherwise fall back
+  // to Noto Sans (which the worker must have installed).
+  const planFontId = plan.subtitle_font_id;
+  const resolvedFont = planFontId ? fonts[planFontId] : null;
+  const fontName = resolvedFont?.fontFamily || 'Noto Sans';
+  const fontDir = resolvedFont?.localPath ? path.dirname(resolvedFont.localPath) : null;
+
+  // Build the subtitles filter with fontsdir if we have a resolved font file,
+  // so libass can load the font even if it isn't system-installed.
+  const subtitlesOpts = [`filename=${filterPath(srtPath)}`, `force_style='FontName=${fontName},FontSize=${size},Outline=2,MarginV=${Math.round(h / 12)}'`];
+  if (fontDir) subtitlesOpts.push(`fontsdir=${filterPath(fontDir)}`);
+  return `subtitles=${subtitlesOpts.join(':')}`;
+}
+
 /**
  * Renders the plan to an H.264 / AAC MP4 (yuv420p, faststart).
  * @param files   { [assetId]: { path, hasAudio } }
@@ -112,27 +141,7 @@ export async function renderPlan(plan, files, { outFile, workDir, quality, signa
 
   let videoOut = '[cv]';
   if (plan.cues.length) {
-    const srt = plan.cues
-      .map((cue, i) => `${i + 1}\n${srtTime(cue.start)} --> ${srtTime(cue.end)}\n${cue.text.replace(/\r/g, '')}\n`)
-      .join('\n');
-    const srtPath = path.join(workDir, 'subtitles.srt');
-    await fs.writeFile(srtPath, srt, 'utf8');
-    const size = Math.round(h / 28);
-
-    // Resolve the font for subtitles. If a subtitle_font_id is specified on the
-    // plan or on individual cues, use the resolved font file. Otherwise fall back
-    // to Noto Sans (which the worker must have installed).
-    const planFontId = plan.subtitle_font_id;
-    const resolvedFont = planFontId ? fonts[planFontId] : null;
-    const fontName = resolvedFont?.fontFamily || 'Noto Sans';
-    const fontDir = resolvedFont?.localPath ? path.dirname(resolvedFont.localPath) : null;
-
-    // Build the subtitles filter with fontsdir if we have a resolved font file,
-    // so libass can load the font even if it isn't system-installed.
-    const subtitlesOpts = [`filename=${srtPath}`, `force_style='FontName=${fontName},FontSize=${size},Outline=2,MarginV=${Math.round(h / 12)}'`];
-    if (fontDir) subtitlesOpts.push(`fontsdir=${fontDir}`);
-
-    filters.push(`[cv]subtitles=${subtitlesOpts.join(':')}[sv]`);
+    filters.push(`[cv]${await subtitlesFilter(plan, workDir, fonts)}[sv]`);
     videoOut = '[sv]';
   }
 

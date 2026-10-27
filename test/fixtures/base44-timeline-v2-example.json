@@ -1,0 +1,303 @@
+{
+  "schema_version": 2,
+  "duration_seconds": 32.5,
+  "tracks": [
+    {
+      "id": "video-1",
+      "type": "video",
+      "label": "Main footage",
+      "clips": [
+        {
+          "id": "clip-1",
+          "source_asset_id": "asset-abc123",
+          "source_label": "Interview - CEO speaking",
+          "source_in": 0,
+          "source_out": 8,
+          "start": 0,
+          "end": 8,
+          "duration": 8,
+          "transition_in": "fade",
+          "transition_duration": 0.3,
+          "speed": 1,
+          "note": "Opening hook"
+        },
+        {
+          "id": "clip-2",
+          "source_asset_id": "asset-abc123",
+          "source_label": "Interview - CEO speaking",
+          "source_in": 8.5,
+          "source_out": 22,
+          "start": 8,
+          "end": 21.5,
+          "duration": 13.5,
+          "transition_in": "dissolve",
+          "transition_duration": 0.4,
+          "speed": 1,
+          "note": "Main talking segment"
+        },
+        {
+          "id": "clip-3",
+          "source_asset_id": "asset-abc123",
+          "source_label": "Interview - CEO speaking",
+          "source_in": 22,
+          "source_out": 32.5,
+          "start": 21.5,
+          "end": 32,
+          "duration": 10.5,
+          "transition_in": "dissolve",
+          "transition_duration": 0.4,
+          "speed": 1,
+          "note": "Closing statement"
+        }
+      ]
+    },
+    {
+      "id": "audio-1",
+      "type": "audio",
+      "label": "Music bed",
+      "clips": [
+        {
+          "id": "audio-clip-1",
+          "source_asset_id": "asset-music001",
+          "source_label": "Upbeat corporate bed",
+          "source_in": 0,
+          "source_out": 32,
+          "start": 0,
+          "end": 32,
+          "duration": 32,
+          "transition_in": "fade",
+          "transition_duration": 0.5,
+          "speed": 1,
+          "note": "Background music at -14dB"
+        }
+      ]
+    }
+  ],
+  "overlays": [
+    {
+      "id": "lower-third-1",
+      "type": "lower_third",
+      "start": 0.5,
+      "end": 5.5,
+      "title": "Jane Doe",
+      "subtitle": "Chief Executive Officer",
+      "text": "",
+      "replacement": "",
+      "source_asset_id": "",
+      "source_label": "",
+      "citation": "",
+      "license_url": "",
+      "x": 0.5,
+      "y": 0.85,
+      "width": 800,
+      "accent_color": "#d21428",
+      "font_id": "oswald-bold",
+      "animation": "easeOutCubic",
+      "animation_duration": 0.45,
+      "crop": null,
+      "zoom_start": 1,
+      "zoom_end": 1,
+      "face_x": 0.5,
+      "face_y": 0.33,
+      "note": "Speaker name card at start of segment"
+    },
+    {
+      "id": "pill-1",
+      "type": "pill",
+      "start": 2,
+      "end": 5,
+      "title": "10 YEARS",
+      "subtitle": "",
+      "text": "",
+      "replacement": "",
+      "source_asset_id": "",
+      "source_label": "",
+      "citation": "",
+      "license_url": "",
+      "x": 0.5,
+      "y": 0.15,
+      "width": 600,
+      "accent_color": "#d21428",
+      "font_id": "oswald-bold",
+      "animation": "easeOutCubic",
+      "animation_duration": 0.35,
+      "crop": null,
+      "zoom_start": 1,
+      "zoom_end": 1,
+      "face_x": 0.5,
+      "face_y": 0.33,
+      "note": "Emphasized phrase"
+    },
+    {
+      "id": "speaker-zoom-1",
+      "type": "lower_third",
+      "start": 8.5,
+      "end": 21.5,
+      "title": "",
+      "subtitle": "",
+      "text": "",
+      "replacement": "",
+      "source_asset_id": "",
+      "source_label": "",
+      "citation": "",
+      "license_url": "",
+      "x": 0.5,
+      "y": 0.5,
+      "width": 0,
+      "accent_color": "",
+      "font_id": "",
+      "animation": "easeInOut",
+      "animation_duration": 0.8,
+      "crop": null,
+      "zoom_start": 1,
+      "zoom_end": 1.15,
+      "face_x": 0.5,
+      "face_y": 0.4,
+      "note": "Slow punch-in zoom on speaker during main segment"
+    },
+    {
+      "id": "image-card-1",
+      "type": "image_card",
+      "start": 10,
+      "end": 14,
+      "title": "",
+      "subtitle": "",
+      "text": "",
+      "replacement": "",
+      "source_asset_id": "asset-img001",
+      "source_label": "Product hero shot",
+      "citation": "Source: Company press kit",
+      "license_url": "https://example.com/license",
+      "x": 0.5,
+      "y": 0.5,
+      "width": 900,
+      "accent_color": "",
+      "font_id": "",
+      "animation": "easeOutCubic",
+      "animation_duration": 0.5,
+      "crop": {
+        "x": 0,
+        "y": 0,
+        "w": 1920,
+        "h": 1080
+      },
+      "zoom_start": 1,
+      "zoom_end": 1.08,
+      "face_x": 0.5,
+      "face_y": 0.5,
+      "note": "B-roll product image with slow drift"
+    },
+    {
+      "id": "credit-1",
+      "type": "credit",
+      "start": 10.2,
+      "end": 14,
+      "title": "",
+      "subtitle": "",
+      "text": "Source: Company press kit",
+      "replacement": "",
+      "source_asset_id": "",
+      "source_label": "",
+      "citation": "Company press kit",
+      "license_url": "https://example.com/license",
+      "x": 0.92,
+      "y": 0.08,
+      "width": 400,
+      "accent_color": "",
+      "font_id": "inter-regular",
+      "animation": "easeOutCubic",
+      "animation_duration": 0.4,
+      "crop": null,
+      "zoom_start": 1,
+      "zoom_end": 1,
+      "face_x": 0.5,
+      "face_y": 0.33,
+      "note": "Attribution for image card"
+    },
+    {
+      "id": "headline-1",
+      "type": "headline",
+      "start": 21.5,
+      "end": 26,
+      "title": "Building the future",
+      "subtitle": "",
+      "text": "",
+      "replacement": "",
+      "source_asset_id": "",
+      "source_label": "",
+      "citation": "",
+      "license_url": "",
+      "x": 0.5,
+      "y": 0.3,
+      "width": 1000,
+      "accent_color": "#d21428",
+      "font_id": "playfair-bold",
+      "animation": "easeOutCubic",
+      "animation_duration": 0.6,
+      "crop": null,
+      "zoom_start": 1,
+      "zoom_end": 1,
+      "face_x": 0.5,
+      "face_y": 0.33,
+      "note": "Closing headline"
+    }
+  ],
+  "audio": {
+    "music_mood": "upbeat corporate",
+    "music_gain_db": -14,
+    "voiceover_language": "",
+    "voiceover_script": ""
+  },
+  "subtitles": {
+    "language": "en",
+    "style": "white-on-black, centered, Oswald semibold",
+    "cues": [
+      {
+        "start": 0.5,
+        "end": 4,
+        "text": "Ten years ago, we started with a simple idea."
+      },
+      {
+        "start": 4,
+        "end": 8,
+        "text": "Make great products that people love."
+      },
+      {
+        "start": 8.5,
+        "end": 13,
+        "text": "Today, we're building on that foundation."
+      },
+      {
+        "start": 13,
+        "end": 18,
+        "text": "With new technology and new ideas."
+      },
+      {
+        "start": 21.5,
+        "end": 26,
+        "text": "This is just the beginning."
+      },
+      {
+        "start": 26,
+        "end": 32,
+        "text": "Thank you for being part of our journey."
+      }
+    ]
+  },
+  "output_spec": {
+    "width": 1080,
+    "height": 1920,
+    "fps": 30,
+    "format": "mp4",
+    "video_codec": "h264",
+    "audio_codec": "aac",
+    "aspect_ratio": "9:16",
+    "burn_subtitles": true,
+    "duration_seconds": 32.5
+  },
+  "source_asset_ids": [
+    "asset-abc123",
+    "asset-music001",
+    "asset-img001"
+  ]
+}
